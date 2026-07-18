@@ -8,6 +8,7 @@ within a single run using Cognee's four-verb memory API.
 
 This implementation is completely model-agnostic and relies on configured
 environment variables for providers, endpoints, models, and credentials.
+It operates in-process, utilizing local relational, vector, and graph databases.
 """
 
 import os
@@ -22,7 +23,7 @@ async def configure_local_memory():
     """
     Sets up the local databases and guarantees model-agnostic execution.
     All configuration (provider, model, endpoints, API keys) is dynamically read from
-    the active environment configuration.
+    the active environment configuration, preventing duplicate setups.
     """
     # Supported providers: openai (default), azure, gemini, anthropic, ollama, custom, etc.
     os.environ["LLM_PROVIDER"] = os.environ.get("LLM_PROVIDER", "openai")

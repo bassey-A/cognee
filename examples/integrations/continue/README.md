@@ -1,78 +1,62 @@
-# Cognee WASM Integration for Continue Fork (`babs`)
+# Cognee Unified In-Process Graph Memory Integration
 
-This folder contains the complete, production-grade integration package to embed **Cognee-RS** (the Rust engine) compiled to **WebAssembly (WASM)** directly inside your **Continue** fork (`babs`).
+This folder contains the integration code to embed **Cognee's high-performance Graph-RAG Memory** completely **in-process** inside your **Continue** fork (`babs`).
 
-## Why WASM + Rust?
+## Key Benefits of In-Process Integration
 
-1. **Zero System Dependencies:** No local Python runtime, version mismatch, or C++ toolchains are required on the user's system.
-2. **Instant & Failsafe Execution:** Booting the WebAssembly module takes under 350ms, with zero Gatekeeper quarantine alerts on macOS, SmartScreen alerts on Windows, or permission restrictions.
-3. **Embedded High-Performance:** True parallel, multi-threaded codebase indexing is handled efficiently in native Rust, safely sandboxed inside Node's engine.
+1. **Single Unified Process:** Spawns zero external binaries, subprocesses, sidecars, or Docker instances. Runs entirely within Continue's extension process.
+2. **Zero Duplicate Configurations:** Does not define its own model settings or prompt the user for API keys. It directly accepts and reuses Continue's already-instantiated `ILLM` and `EmbeddingsProvider` objects.
+3. **Optimized Local Storage:** Builds and preserves code relations (e.g. `IMPORTS`, `EXTENDS`, `DEFINES`, `CALLS`) inside Continue's existing SQLite database.
 
 ---
 
 ## File Map
 
-- **`CogneeWasmService.ts`**: Singleton service in charge of dynamically importing the compiled wasm bindings and instantiating the memory database layers.
-- **`CogneeCodebaseIndex.ts`**: Continue-compliant custom indexer implementation. It intercepts file modifications, triggers WASM code-relationship extraction, and persists the indexing results in LanceDB and SQLite.
-- **`exampleCodeGraphPayload.ts`**: Architectural blueprint demonstrating how abstract syntax trees (ASTs), code nodes, and dependencies are mapped and structured inside Cognee-RS.
+- **`CogneeGraphMemoryIndex.ts`**: The main indexer adapter implementing Continue's native `CodebaseIndex` interface. It analyzes code structures inline using your active LLM and embedding providers, building a topological graph of your codebase.
 
 ---
 
 ## Integration Guide
 
-### Step 1: Clone and Compile Cognee-RS to WASM
+### Step 1: Copy files to your Continue Fork
 
-To get the wasm build target of `cognee-rs`, make sure you have the [Rust toolchain](https://rustup.rs/) and [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) installed.
-
+Copy `CogneeGraphMemoryIndex.ts` directly into the indexing core directory of your fork:
 ```bash
-# Clone the rust memory repository
-git clone https://github.com/topoteretes/cognee-rs.git
-cd cognee-rs
-
-# Compile the package to WebAssembly for Node.js environments
-wasm-pack build --target nodejs --out-name cognee_rs_wasm
+cp CogneeGraphMemoryIndex.ts /path-to-your-fork/babs/core/indexing/
 ```
 
-This generates a `pkg/` folder containing the compiled `cognee_rs_wasm.wasm` file and corresponding TypeScript bindings.
+### Step 2: Register the Cognee Indexer in CodebaseIndexer
 
-### Step 2: Copy the Files to Your Continue Fork (`babs`)
-
-1. Copy the output `pkg/` folder from the steps above into your Continue fork's binary distribution directory:
-   ```bash
-   cp -r pkg/ /your-local-path-to/babs/core/bin/cognee-rs-wasm/
-   ```
-
-2. Copy the TypeScript files from this folder (`CogneeWasmService.ts`, `CogneeCodebaseIndex.ts`) directly into:
-   ```bash
-   core/indexing/
-   ```
-
-### Step 3: Register the Cognee Indexer in Continue
-
-Open `core/indexing/CodebaseIndexer.ts` in your fork.
+Open `core/indexing/CodebaseIndexer.ts` inside your Continue fork (`babs`).
 
 1. Import your newly added custom indexer:
    ```typescript
-   import { CogneeCodebaseIndex } from "./CogneeCodebaseIndex";
+   import { CogneeGraphMemoryIndex } from "./CogneeGraphMemoryIndex";
    ```
 
-2. Add `CogneeCodebaseIndex` to your `getIndexesToBuild()` method:
+2. Inside `getIndexesToBuild()`, register the indexer under your preferred role or target:
    ```typescript
    const indexTypeToIndexerMapping: Record<
      ContextIndexingType,
      () => Promise<CodebaseIndex | null>
    > = {
-     // ... other indices
+     // ... other indexers
      embeddings: async () => {
        const embeddingsModel = config.selectedModelByRole.embed;
-       return new CogneeCodebaseIndex(this.ide.readFile.bind(this.ide));
+       const activeLLM = config.selectedModelByRole.chat || config.selectedModelByRole.default;
+
+       return new CogneeGraphMemoryIndex(
+         activeLLM,
+         embeddingsModel,
+         this.ide.readFile.bind(this.ide)
+       );
      }
    };
    ```
 
-### Step 4: Run and Test Completely Offline!
+### Step 3: Run Completely Unified!
 
-When you launch your Continue development workspace:
-- Cognee WASM will automatically intercept file additions and edits.
-- It will chunk the codebase, extract AST nodes/relationships, and store them directly in the SQLite + LanceDB databases embedded inside your extension's local directory.
-- Queries routed via the prompt or chatbot context (e.g., `@codebase`) will return connected entity hierarchies rather than isolated, out-of-context text snippets.
+When Continue indexes a workspace:
+- `CogneeGraphMemoryIndex` is loaded in the same Node execution context.
+- It parses classes, methods, functions, and import structures without any subprocess overhead.
+- When retrieving context for user questions, it traverses these code connections, letting the chatbot understand complex module interactions (e.g., *"How does this class interact with the database layers?"*) with absolute topological accuracy!
