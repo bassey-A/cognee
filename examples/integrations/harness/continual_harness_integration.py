@@ -5,6 +5,9 @@ and Trace/Feedback tasks directly inside a self-improving foundation agent harne
 Unlike traditional prompt-optimization frameworks that require frequent offline episode resets,
 this integration demonstrates online context-adaptation and self-improvement
 within a single run using Cognee's four-verb memory API.
+
+This implementation is completely model-agnostic and relies on configured
+environment variables for providers, endpoints, models, and credentials.
 """
 
 import os
@@ -16,8 +19,19 @@ from cognee.shared.data_models import KnowledgeGraph, Node, Edge
 
 # 1. Initialize configuration for local memory storage (embedded Ladybug + LanceDB)
 async def configure_local_memory():
-    os.environ["LLM_API_KEY"] = os.environ.get("LLM_API_KEY", "your-openai-api-key")
-    os.environ["LLM_MODEL"] = "openai/gpt-4o-mini"
+    """
+    Sets up the local databases and guarantees model-agnostic execution.
+    All configuration (provider, model, endpoints, API keys) is dynamically read from
+    the active environment configuration.
+    """
+    # Supported providers: openai (default), azure, gemini, anthropic, ollama, custom, etc.
+    os.environ["LLM_PROVIDER"] = os.environ.get("LLM_PROVIDER", "openai")
+    os.environ["LLM_MODEL"] = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
+    os.environ["LLM_API_KEY"] = os.environ.get("LLM_API_KEY", "your-api-key")
+
+    # Embedding settings can be configured to use local models (e.g. Ollama/ONNX) or cloud endpoints
+    os.environ["EMBEDDING_PROVIDER"] = os.environ.get("EMBEDDING_PROVIDER", os.environ["LLM_PROVIDER"])
+    os.environ["EMBEDDING_MODEL"] = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 
     # Configure the SQL session cache and embedded database backend
     os.environ["CACHE_BACKEND"] = "sqlite"
@@ -39,14 +53,6 @@ class ContinualHarnessMemoryManager:
         Record a step taken by an agent during its run.
         This writes to Cognee's session memory, allowing immediate context recall.
         """
-        step_payload = {
-            "step": step_index,
-            "action": action,
-            "observation": observation,
-            "reward": reward,
-            "session_id": self.session_id
-        }
-
         # Save into the temporary session/conversation cache
         print(f"[Harness Memory] Recording Trajectory Step {step_index}: Action={action}")
         await cognee.remember(
@@ -78,12 +84,6 @@ class ContinualHarnessMemoryManager:
         At completion or failure, feed explicit evaluative feedback back into the graph
         to permanently adapt the cognitive weights and update ontology links.
         """
-        feedback_payload = {
-            "success": success_criteria_met,
-            "reflections": critical_reflections,
-            "session_id": self.session_id
-        }
-
         print(f"[Harness Memory] Applying trace evaluation feedback to memory layer.")
 
         # Cognee's improve pipeline updates graph relationships and re-weights connections

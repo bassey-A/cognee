@@ -15,11 +15,13 @@ export interface CogneeWasmEngine {
 }
 
 export interface CogneeWasmConfig {
+  llmProvider?: string; // e.g. "openai" | "anthropic" | "gemini" | "ollama" | "custom"
   llmApiKey: string;
   llmModel?: string;
   llmEndpoint?: string;
-  embeddingProvider?: "openai" | "onnx" | "ollama";
+  embeddingProvider?: string; // e.g. "openai" | "onnx" | "ollama" | "custom"
   embeddingModel?: string;
+  embeddingEndpoint?: string;
   dbPath?: string;
 }
 
@@ -48,7 +50,7 @@ export class CogneeWasmService {
 
   /**
    * Dynamically loads and initializes the compiled WebAssembly bindings.
-   * Supports standard node-side loading of local `.wasm` files bundled in the extension.
+   * Completely model-agnostic, accepting any provider, endpoint, or model configuration.
    */
   public async initialize(config: CogneeWasmConfig, extensionPath: string): Promise<void> {
     if (this.isInitialized) {
@@ -72,12 +74,15 @@ export class CogneeWasmService {
 
       // 3. Set up the local SQLite / LanceDB data directories inside the extension storage
       const defaultDbPath = config.dbPath || path.join(extensionPath, "out", "cognee_memory.db");
+
       const resolvedConfig: CogneeWasmConfig = {
+        llmProvider: config.llmProvider || "openai",
         llmApiKey: config.llmApiKey,
-        llmModel: config.llmModel || "openai/gpt-5-mini",
+        llmModel: config.llmModel || "openai/gpt-4o-mini",
         llmEndpoint: config.llmEndpoint || "https://api.openai.com/v1",
-        embeddingProvider: config.embeddingProvider || "openai",
+        embeddingProvider: config.embeddingProvider || config.llmProvider || "openai",
         embeddingModel: config.embeddingModel || "text-embedding-3-small",
+        embeddingEndpoint: config.embeddingEndpoint,
         dbPath: defaultDbPath,
       };
 
